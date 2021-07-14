@@ -5,11 +5,11 @@ metadata:
   namespace: fluentd
 data:
   fluent.conf: |-
-    ################################################################
-    # This source gets all logs from local docker host
     @include pods-kind-fluent.conf
     #@include pods-fluent.conf
-
+    @include filter-kubernetes-meta.conf
+    @include filter-json.conf
+    #@include filter-out-json.conf
     @include copy-file-elastic.conf
   pods-kind-fluent.conf: |-
     <source>
@@ -18,7 +18,7 @@ data:
       tag kubernetes.*
       path /var/log/containers/*.log
       pos_file /var/log/fluentd-containers.log.pos
-      exclude_path ["/var/log/containers/fluent*"]
+      exclude_path ["/var/log/containers/fluent*","/var/log/containers/**_kube-system_**"]
       <parse>
         @type regexp
         #https://regex101.com/r/ZkOBTI/1
@@ -26,17 +26,6 @@ data:
         #time_format %Y-%m-%dT%H:%M:%S.%NZ
       </parse>
     </source>
-    <filter kubernetes.**>
-      @type kubernetes_metadata
-      @id filter_kube_metadata
-      kubernetes_url "#{ENV['FLUENT_FILTER_KUBERNETES_URL'] || 'https://' + ENV.fetch('KUBERNETES_SERVICE_HOST') + ':' + ENV.fetch('KUBERNETES_SERVICE_PORT') + '/api'}"
-      verify_ssl "#{ENV['KUBERNETES_VERIFY_SSL'] || true}"
-      ca_file "#{ENV['KUBERNETES_CA_FILE']}"
-      skip_labels "#{ENV['FLUENT_KUBERNETES_METADATA_SKIP_LABELS'] || 'false'}"
-      skip_container_metadata "#{ENV['FLUENT_KUBERNETES_METADATA_SKIP_CONTAINER_METADATA'] || 'false'}"
-      skip_master_url "#{ENV['FLUENT_KUBERNETES_METADATA_SKIP_MASTER_URL'] || 'false'}"
-      skip_namespace_metadata "#{ENV['FLUENT_KUBERNETES_METADATA_SKIP_NAMESPACE_METADATA'] || 'false'}"
-    </filter>
   pods-fluent.conf: |-
     <source>
       @type tail
@@ -51,6 +40,7 @@ data:
         time_format %Y-%m-%dT%H:%M:%S.%NZ
       </parse>
     </source>
+  filter-kubernetes-meta.conf: |- # add kubernetes metadata to the logs
     <filter kubernetes.**>
       @type kubernetes_metadata
       @id filter_kube_metadata
@@ -61,6 +51,28 @@ data:
       skip_container_metadata "#{ENV['FLUENT_KUBERNETES_METADATA_SKIP_CONTAINER_METADATA'] || 'false'}"
       skip_master_url "#{ENV['FLUENT_KUBERNETES_METADATA_SKIP_MASTER_URL'] || 'false'}"
       skip_namespace_metadata "#{ENV['FLUENT_KUBERNETES_METADATA_SKIP_NAMESPACE_METADATA'] || 'false'}"
+    </filter>
+  filter-json.conf: |-
+    <filter **>
+      @type parser
+      key_name "message"
+      reserve_data true
+      reserve_time true
+      hash_value_field "log-object"
+      remove_key_name_field true
+      replace_invalid_sequence true
+      emit_invalid_record_to_error false
+      <parse>
+        @type json
+      </parse>
+    </filter>
+  filter-out-json.conf: |- # 
+    <filter **>
+      @type record_modifier
+      remove_keys _dummy_,log-object
+      <record>
+        _dummy_ ${record.merge!(record["log-object"])}
+      </record>
     </filter>
   copy-file-elastic.conf: |-
     <match **>
