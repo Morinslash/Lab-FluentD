@@ -11,7 +11,7 @@ data:
     @include filter-json.conf
     #@include filter-out-json.conf
     @include copy-file-elastic.conf
-  pods-kind-fluent.conf: |-
+  pods-kind-fluent.conf: |- # kind cluster fluentd configuration, it differs from regular cluster
     <source>
       @type tail
       read_from_head true
@@ -26,7 +26,7 @@ data:
         #time_format %Y-%m-%dT%H:%M:%S.%NZ
       </parse>
     </source>
-  pods-fluent.conf: |-
+  pods-fluent.conf: |- # boilerplate for regular k8s cluster
     <source>
       @type tail
       read_from_head true
@@ -52,13 +52,13 @@ data:
       skip_master_url "#{ENV['FLUENT_KUBERNETES_METADATA_SKIP_MASTER_URL'] || 'false'}"
       skip_namespace_metadata "#{ENV['FLUENT_KUBERNETES_METADATA_SKIP_NAMESPACE_METADATA'] || 'false'}"
     </filter>
-  filter-json.conf: |-
+  filter-json.conf: |- # filter to parse the json log message, field to pars is "message" with prefix "log-data"
     <filter **>
       @type parser
       key_name "message"
       reserve_data true
       reserve_time true
-      hash_value_field "log-object"
+      hash_value_field "log-data"
       remove_key_name_field true
       replace_invalid_sequence true
       emit_invalid_record_to_error false
@@ -66,15 +66,7 @@ data:
         @type json
       </parse>
     </filter>
-  filter-out-json.conf: |- # 
-    <filter **>
-      @type record_modifier
-      remove_keys _dummy_,log-object
-      <record>
-        _dummy_ ${record.merge!(record["log-object"])}
-      </record>
-    </filter>
-  copy-file-elastic.conf: |-
+  copy-file-elastic.conf: |- # output stream copy allows to duplicate logs and send to multiple storages
     <match **>
       @type copy
       <store>
